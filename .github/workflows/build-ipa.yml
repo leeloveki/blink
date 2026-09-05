@@ -9,24 +9,18 @@ on:
 
 jobs:
   build-ipa:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Select Xcode 15.x if available (else default)
+      - name: Diagnostics (Xcode in use)
+        # blink raw 的工程是 Xcode 16+ 的新格式，需用最新 Xcode（runner 默认即最新稳定版）
         run: |
-          X15=$(ls -d /Applications/Xcode_15*.app 2>/dev/null | sort -V | tail -1)
-          if [ -n "$X15" ]; then
-            sudo xcode-select -s "$X15/Contents/Developer"
-            echo "Using: $X15"
-          else
-            echo "No Xcode 15 found, using default:"
-            ls /Applications | grep -iE '^Xcode' || true
-          fi
           xcodebuild -version
+          ls /Applications | grep -iE '^Xcode' || true
 
       - name: Cache SPM artifacts (speed up retries)
         uses: actions/cache@v4
