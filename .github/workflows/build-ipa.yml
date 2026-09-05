@@ -16,11 +16,20 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Diagnostics (Xcode in use)
-        # blink raw 的工程是 Xcode 16+ 的新格式，需用最新 Xcode（runner 默认即最新稳定版）
+      - name: Select newest Xcode
+        # blink raw 使用 iOS 26 新 API（如 UIGlassEffect），需要最新 Xcode SDK
         run: |
+          ls -1d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1
+          XCODE=$(ls -1d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE" ]; then
+            sudo xcode-select -s "$XCODE/Contents/Developer"
+            echo "Selected: $XCODE"
+          else
+            echo "No Xcode*app found, keeping default"
+          fi
+          sudo xcode-select -p
           xcodebuild -version
-          ls /Applications | grep -iE '^Xcode' || true
+          xcodebuild -showsdks 2>/dev/null | grep -iE 'iphoneos' | head -3
 
       - name: Cache SPM artifacts (speed up retries)
         uses: actions/cache@v4
