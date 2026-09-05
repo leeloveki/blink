@@ -1,0 +1,78 @@
+name: Build unsigned IPA
+
+# 手动触发（Actions 页 Run workflow）或本文件变更后自动构建
+on:
+  workflow_dispatch:
+  push:
+    branches: [raw]
+    paths: ['.github/workflows/build-ipa.yml']
+
+jobs:
+  build-ipa:
+    runs-on: macos-14
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select Xcode 15.x if available (else default)
+        run: |
+          X15=$(ls -d /Applications/Xcode_15*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$X15" ]; then
+            sudo xcode-select -s "$X15/Contents/Developer"
+            echo "Using: $X15"
+          else
+            echo "No Xcode 15 found, using default:"
+            ls /Applications | grep -iE '^Xcode' || true
+          fi
+          xcodebuild -version
+
+      - name: Cache SPM artifacts (speed up retries)
+        uses: actions/cache@v4
+        with:
+          path: |
+            xcfs/.build
+            Frameworks/ios_system/xcfs/.build
+          key: ${{ runner.os }}-${{ hashFiles('get_frameworks.sh', 'xcfs/Package.swift') }}
+
+      - name: Get frameworks
+        run: |
+          bash get_frameworks.sh
+          echo "--- artifacts after resolve ---"
+          ls -R xcfs/.build/artifacts 2>/dev/null || echo "NO artifacts dir yet"
+
+      - name: Get resources
+        run: bash get_resources.sh
+
+      - name: Prepare developer_setup.xcconfig
+        run: cp template_setup.xcconfig developer_setup.xcconfig
+
+      - name: Build unsigned Debug app (iphoneos)
+        run: |
+          set -o pipefail
+          xcodebuild -project Blink.xcodeproj -scheme Blink -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            DEVELOPMENT_TEAM='' \
+            ONLY_ACTIVE_ARCH=NO \
+            build 2>&1 | tee build.log
+          echo "=== app 产物 ==="
+          find build/Build/Products -maxdepth 2 -name '*.app' -print
+
+      - name: Package unsigned ipa
+        run: |
+          cd build/Build/Products/Debug-iphoneos
+          mkdir -p Payload
+          cp -R Blink.app Payload/
+          zip -qry Blink-unsigned.ipa Payload
+          ls -lh Blink-unsigned.ipa
+
+      - name: Upload ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blink-unsigned-ipa
+          path: build/Build/Products/Debug-iphoneos/Blink-unsigned.ipa
